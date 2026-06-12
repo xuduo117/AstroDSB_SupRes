@@ -1,24 +1,29 @@
 # General Experiment Information
 experiment:
-  name: "astro_supres_dsb_v1"
+  name: "astro_supres_dsb"
   seed: 42
   base_log_dir: "results"
   resume: True  
-  checkpoint_path: "results/astro_supres_dsb_v1/latest.pt"
+  checkpoint_path: "results/astro_supres_dsb/latest.pt"
 
 # Dataset Configuration
 dataset:
   type: "ISRF"
   roots:
     - '/scratch/xuduo117/Project_DSB/AstroDSB_SupRes/ML_data/'
+  skirt_roots:
+    - '/scratch/xuduo117/project_SKIRT/Observational_Galleries/'
+  skirt_fraction: 0.25
+
   primary_indices: [0]   # 4.5um, 24um, 250um
   cond_indices: [0]      # Observations used for bridge guidance
   split_mode: "physical_ood"  ### "random"
   ood_keywords: ["I100"]  # You can add more like ["I100", "B1"]
   # test_size: 0.01
   batch_size: 2               
-  num_workers: 8
+  num_workers: 16
   persistent_workers: true
+  prefetch_factor: 4          # <-- NEW: Forces workers to prepare 4 batches in advance
   
   patch_size: 256
   num_patches_train: 8         
@@ -60,7 +65,7 @@ model:
 
 # Training Control (Synced with DDPM version)
 training:
-  epochs: 2702
+  epochs: 4102
   snapshot_iter_freq: 5000     # Mid-epoch visual/checkpoint check
   archive_interval: 100        # Permanent checkpoint every 100 epochs
   snapshot_epoch_freq: 1       # End-of-epoch full validation

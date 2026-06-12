@@ -1,11 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=SupRes_DSBV3
+#SBATCH --job-name=SupRes_DSB
 #SBATCH -A rrg-pgmartin
-#SBATCH --output=logs/dsbv3_%j.out
-#SBATCH --error=logs/dsbv3_%j.err
+#SBATCH --output=logs/dsb_%j.out
+#SBATCH --error=logs/dsb_%j.err
 #SBATCH --nodes=1                     # Multi-GPU on a single node
 #SBATCH --gpus-per-node=4             # Request all 4 H100s
-#SBATCH --cpus-per-task=32            # 8 cores per GPU (match num_workers in YAML)
+#SBATCH --ntasks=4                    # CRITICAL: 1 task per GPU for PyTorch DDP
+#SBATCH --cpus-per-task=24            # 8 cores per GPU (match num_workers in YAML)
 #SBATCH --time=23:59:59                 # Max time per job
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=astroduo.xu@utoronto.ca
@@ -32,4 +33,4 @@ RANDOM_PORT=$(shuf -i 20000-65000 -n 1)
 torchrun \
     --nproc_per_node=4 \
     --master_port=$RANDOM_PORT \
-    main.py --config configs/SuperRes_dsb_v3.yaml
+    main.py --config configs/SuperRes_dsb.yaml

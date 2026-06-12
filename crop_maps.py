@@ -115,9 +115,10 @@ class GalaxyMapCropper:
 if __name__ == "__main__":
     # Define the galaxies you want to process
     galaxy_files = [
-        "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/CleanLR_12CO_full.npy",
-        "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/VeryLR_12CO_full.npy",
-        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_polaris_planck_545GHz_Input_5x.npy",
+        "/scratch/xuduo117/Real_Obs_Data/Planck_Data/ACT_Resolution_Maps/Planck_217GHz_0.5arcmin_CAR.npy"
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/CleanLR_12CO_full.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/VeryLR_12CO_full.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_polaris_planck_545GHz_Input_4x.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_4x.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Ursa_Major_planck_545GHz_Input_4x.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_polaris_planck_857GHz_Input.npy",
@@ -126,13 +127,39 @@ if __name__ == "__main__":
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/ngc6052_synthetic_input.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/Nobeyama_Input.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/CARMA_NRO_downsampled_5.npy",
-        # "./act_inference_data/Validation_Split/Planck_Val_Input.npy"
-        
+        # "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_2/act_inference_data/Validation_Split/Planck_Val_Input.npy",
+        # "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_2/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input.npy",  
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_1x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_2x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_3x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_4x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_5x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_857GHz_Input_1x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_857GHz_Input_2x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_857GHz_Input_3x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_857GHz_Input_4x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_857GHz_Input_5x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_1x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_2x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_3x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_4x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_545GHz_Input_5x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_857GHz_Input_1x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_857GHz_Input_2x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_857GHz_Input_3x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_857GHz_Input_4x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Spider_planck_857GHz_Input_5x.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_M83_Centered_Ready.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_Antennae_Centered_Ready.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_M83_6xSR_Input.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_Antennae_6xSR_Input.npy"
+
     ]
     
     # Set max_chunk_gb to a safe size for your GPU inference later (e.g., 0.5 GB)
-    # cropper = GalaxyMapCropper(patch_size=256, stride=128, max_chunk_gb=1.5)
-    cropper = GalaxyMapCropper(patch_size=256, stride=16, max_chunk_gb=1.5)
+    cropper = GalaxyMapCropper(patch_size=256, stride=128, max_chunk_gb=1.5)
+    # cropper = GalaxyMapCropper(patch_size=256, stride=64, max_chunk_gb=1.5)
+    # cropper = GalaxyMapCropper(patch_size=256, stride=16, max_chunk_gb=1.5)
     
     # output_directory = "./act_inference_data/cropped_inference_data_128/"
     output_directory = "./cropped_inference_data/"

@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 from easydict import EasyDict as edict
 
-# Import your datasets
-from data.datasets import PlanckACTDataset, RealPlanckDegradationDataset, RealACTDegradationDataset
+# --- UPDATED: Import BOTH Synthetic datasets ---
+from data.datasets import SyntheticAstroDataset, SkirtAstroDataset
 from data.factory import scan_and_split_files
 
 # =========================================================
@@ -62,7 +62,6 @@ def plot_16_samples(dataset, name, log_dir):
             x_cond_phys_np = x_cond_phys[0, 0].numpy()
             y_gt_phys_np = y_gt_phys[0, 0].numpy()
             
-            # 4. Setup Dynamic SymLogNorm for the Physical Data
             # 4. Setup Dynamic SymLogNorm for the Physical Data (NaN Safe!)
             vmax = np.nanpercentile(np.abs(y_gt_phys_np), 99.9)
             if np.isnan(vmax) or vmax <= 0: 
@@ -132,7 +131,7 @@ def plot_16_samples(dataset, name, log_dir):
     os.makedirs(log_dir, exist_ok=True)
     save_path = os.path.join(log_dir, f"train_check_{name.replace(' ', '_')}.png")
     plt.suptitle(f"{name} Dataset - 16 Training Samples (Asymmetric)", fontsize=24, y=0.90)
-    plt.savefig(save_path, bbox_inches='tight', dpi=150)
+    plt.savefig(save_path, bbox_inches='tight', facecolor='white', dpi=150)
     plt.close()
     print(f"✅ Saved to {save_path}")
 
@@ -147,21 +146,47 @@ def main():
     # FORCE TRAINING MODE
     cfg.dataset.augment = True
     
-    # 1. Init Datasets
     print("Initializing datasets in STRICT TRAINING MODE...")
-    train_files, _ = scan_and_split_files(cfg.dataset.roots, split_mode=cfg.dataset.get('split_mode', 'physical_ood'))
+    split_mode = cfg.dataset.get('split_mode', 'physical_ood')
+    ood_keywords = cfg.dataset.get('ood_keywords', ['I100'])
     
-    ds_syn = PlanckACTDataset(cfg, train_files, mode='train')
-    ds_planck = RealPlanckDegradationDataset(cfg, mode='train')
-    ds_act = RealACTDegradationDataset(cfg, mode='train')
+    # 1. Init Raw Dust Dataset
+    print("\n--- Scanning Raw Dust Data ---")
+    dust_train_files, _ = scan_and_split_files(
+        cfg.dataset.roots, 
+        pattern="**/*850um_tensor.npy",
+        split_mode=split_mode,
+        ood_keywords=ood_keywords
+    )
+    
+    # 2. Init SKIRT Multiband Dataset
+    print("\n--- Scanning SKIRT Synthetic Data ---")
+    skirt_roots = cfg.dataset.get('skirt_roots', ['/scratch/xuduo117/project_SKIRT/Observational_Galleries/'])
+    skirt_train_files, _ = scan_and_split_files(
+        skirt_roots, 
+        pattern="**/*_gallery.npy",
+        split_mode=split_mode,
+        ood_keywords=ood_keywords
+    )
 
-    # 2. Setup Output Directory
+    # Instantiate datasets
+    ds_dust = SyntheticAstroDataset(cfg, dust_train_files, mode='train')
+    ds_skirt = SkirtAstroDataset(cfg, skirt_train_files, mode='train')
+
+    # 3. Setup Output Directory
     out_dir = "diagnostics"
+    os.makedirs(out_dir, exist_ok=True)
     
-    # 3. Generate the 16-sample grids
-    plot_16_samples(ds_syn, "Synthetic", out_dir)
-    plot_16_samples(ds_planck, "Real Planck", out_dir)
-    plot_16_samples(ds_act, "Real ACT", out_dir)
+    # 4. Generate the 16-sample grids for BOTH
+    if len(ds_dust) > 0:
+        plot_16_samples(ds_dust, "Raw_Dust_NoiseToClean", out_dir)
+    else:
+        print("⚠️ No Raw Dust training files found.")
+
+    if len(ds_skirt) > 0:
+        plot_16_samples(ds_skirt, "SKIRT_Multiband_NoiseToClean", out_dir)
+    else:
+        print("⚠️ No SKIRT training files found.")
     
     print("\n🎉 All 16-sample training diagnostics generated successfully!")
 

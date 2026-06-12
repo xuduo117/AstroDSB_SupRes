@@ -56,7 +56,7 @@ class AstroDiffusionBridge:
         
         xt_prev_mean = mu_x0_prev * pred_x0 + mu_x1_prev * pred_x1
         
-        if ot_ode:
+        if ot_ode or prev_step == 0:
             return xt_prev_mean
         
         var = (std_sb_prev**2) * (1 - (std_sb_prev/std_sb_t)**2)

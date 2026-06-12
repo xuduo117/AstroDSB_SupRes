@@ -98,8 +98,12 @@ def evaluate(cfg):
     log.info(f"Saving file mapping to: {csv_path}")
     with open(csv_path, 'w') as f:
         f.write("H5_Index,Filepath\n")
-        # Safely extract file list from the synthetic component of the wrapper
-        if hasattr(val_loader.dataset, 'synthetic_dataset'):
+        
+        # Safely extract file lists from the new CombinedSyntheticDataset wrapper
+        if hasattr(val_loader.dataset, 'dust_dataset') and hasattr(val_loader.dataset, 'skirt_dataset'):
+            # Concatenate both file lists for the CSV mapping
+            file_list = val_loader.dataset.dust_dataset.file_list + val_loader.dataset.skirt_dataset.file_list
+        elif hasattr(val_loader.dataset, 'synthetic_dataset'):
             file_list = val_loader.dataset.synthetic_dataset.file_list
         else:
             file_list = val_loader.dataset.file_list

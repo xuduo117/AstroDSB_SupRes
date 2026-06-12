@@ -26,4 +26,4 @@ module load opencv
 source /home/xuduo117/py312/bin/activate
 
 
-python evaluate.py --config configs/SuperRes_dsb_v3.yaml 
+python evaluate.py --config configs/SuperRes_dsb.yaml 
