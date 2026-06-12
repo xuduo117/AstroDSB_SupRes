@@ -8,6 +8,7 @@ I100_npyfile/
 logs/
 results/
 Test_data/
+uncertainty_results/
 
 # Ignore Python cache files
 __pycache__/
