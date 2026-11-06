@@ -41,6 +41,14 @@ class GalaxyMapReconstructor:
         return window_2d.astype(np.float32)
 
     def process_target(self, target_folder):
+        # =================================================================
+        # ---> NEW: FAST BYPASS (Skip if the final map already exists) <---
+        # =================================================================
+        out_fn = os.path.join(self.output_final_dir, f"Recon_{target_folder}.npy")
+        if os.path.exists(out_fn):
+            print(f"  [Skip] {target_folder}: Stitched map already exists (⏩ Fast Bypass)")
+            return
+
         meta, is_complete = self.check_completion(target_folder)
         if meta is None or not is_complete:
             status = "Incomplete predictions" if meta else "Metadata Missing"
@@ -87,15 +95,23 @@ class GalaxyMapReconstructor:
         final_act_map = final_stitched[:H, :W]
 
         # Save the final NumPy array
-        out_fn = os.path.join(self.output_final_dir, f"Recon_{target_folder}.npy")
         np.save(out_fn, final_act_map)
         print(f"  [Success] Saved Final High-Res Map: {out_fn}")
 
 if __name__ == "__main__":
     # Point this to the directory containing all your target subfolders
     # data_directory = './act_inference_data/cropped_inference_data_128/'
-    data_directory = './cropped_inference_data/'
-    output_directory = './final_super_res_maps/'
+    # data_directory = './cropped_inference_data/'
+    # output_directory = './final_super_res_maps/'
+    
+    # data_directory = './cropped_inference_data_0701/'
+    # output_directory = './final_super_res_maps_0701/'    
+    # data_directory = './cropped_inference_data_0818/'
+    # output_directory = './final_super_res_maps_0818/'
+    data_directory = './cropped_inference_data_0910/'
+    output_directory = './final_super_res_maps_0910/'
+    # data_directory = './cropped_inference_data_EQUTAN_Recon_order1/'
+    # output_directory = './final_EQUTAN_Recon_order1/'
     
     recon = GalaxyMapReconstructor(
         crop_meta_root=data_directory,

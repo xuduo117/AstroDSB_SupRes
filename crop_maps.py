@@ -114,8 +114,9 @@ class GalaxyMapCropper:
 # =========================================================
 if __name__ == "__main__":
     # Define the galaxies you want to process
+    factor=3
     galaxy_files = [
-        "/scratch/xuduo117/Real_Obs_Data/Planck_Data/ACT_Resolution_Maps/Planck_217GHz_0.5arcmin_CAR.npy"
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/ACT_Resolution_Maps/Planck_217GHz_0.5arcmin_CAR.npy"
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/CleanLR_12CO_full.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/VeryLR_12CO_full.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_polaris_planck_545GHz_Input_4x.npy",
@@ -127,7 +128,7 @@ if __name__ == "__main__":
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/ngc6052_synthetic_input.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/Nobeyama_Input.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/CARMA_NRO_downsampled_5.npy",
-        # "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_2/act_inference_data/Validation_Split/Planck_Val_Input.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Validation_Split/Planck_Val_Input.npy",
         # "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_2/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input.npy",  
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_1x.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/aligned_Polaris_planck_545GHz_Input_2x.npy",
@@ -152,7 +153,25 @@ if __name__ == "__main__":
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_M83_Centered_Ready.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_Antennae_Centered_Ready.npy",
         # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_M83_6xSR_Input.npy",
-        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_Antennae_6xSR_Input.npy"
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_Antennae_6xSR_Input.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/hst_M82_f160w_input_northup_cropped.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/hst_NGC5584_f160w_input.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/SuperRes/sdss/HST_M83_9xSR_Input.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_100.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_143.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_217.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_353.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_545.npy",
+        "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_857.npy",
+        # "/scratch/xuduo117/Project_DSB/AstroDSB_SupRes_3/act_inference_data/Full_Footprint_Inference/Planck_FullSky_Input_217_R4.00.npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_100_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_143_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_217_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_353_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_545_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        # "/scratch/xuduo117/Real_Obs_Data/Planck_Data/EQUTAN_Recon_order1/dfuws100sqdeg_HFI_SkyMap_857_nominal_ZodiCorrected_0_TAN_x"+str(factor)+".npy",
+        
+        
 
     ]
     
@@ -162,5 +181,7 @@ if __name__ == "__main__":
     # cropper = GalaxyMapCropper(patch_size=256, stride=16, max_chunk_gb=1.5)
     
     # output_directory = "./act_inference_data/cropped_inference_data_128/"
-    output_directory = "./cropped_inference_data/"
+    # output_directory = "./cropped_inference_data/"
+    output_directory = "./cropped_inference_data_0910/"
+    # output_directory = "./cropped_inference_data_EQUTAN_Recon_order1/"
     cropper.process_list(galaxy_files, output_directory)

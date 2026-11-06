@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 from easydict import EasyDict as edict
 
-# --- UPDATED: Import BOTH Synthetic datasets ---
-from data.datasets import SyntheticAstroDataset, SkirtAstroDataset
+# --- UPDATED: Import ALL THREE Synthetic datasets ---
+from data.datasets import SyntheticAstroDataset, SkirtAstroDataset, FireQuicklookDataset
 from data.factory import scan_and_split_files
 
 # =========================================================
@@ -169,15 +169,26 @@ def main():
         ood_keywords=ood_keywords
     )
 
+    # 3. Init FIRE Quicklook Dataset
+    print("\n--- Scanning FIRE Quicklook Data ---")
+    fire_roots = cfg.dataset.get('fire_roots', ['/scratch/xuduo117/project_SKIRT/skirt_batch_runs_FIRE_quicklook_out/'])
+    fire_train_files, _ = scan_and_split_files(
+        fire_roots, 
+        pattern="**/*_fir.npz",
+        split_mode=split_mode,
+        ood_keywords=ood_keywords
+    )
+
     # Instantiate datasets
     ds_dust = SyntheticAstroDataset(cfg, dust_train_files, mode='train')
     ds_skirt = SkirtAstroDataset(cfg, skirt_train_files, mode='train')
+    ds_fire = FireQuicklookDataset(cfg, fire_train_files, mode='train')
 
-    # 3. Setup Output Directory
+    # 4. Setup Output Directory
     out_dir = "diagnostics"
     os.makedirs(out_dir, exist_ok=True)
     
-    # 4. Generate the 16-sample grids for BOTH
+    # 5. Generate the 16-sample grids for ALL THREE
     if len(ds_dust) > 0:
         plot_16_samples(ds_dust, "Raw_Dust_NoiseToClean", out_dir)
     else:
@@ -187,6 +198,11 @@ def main():
         plot_16_samples(ds_skirt, "SKIRT_Multiband_NoiseToClean", out_dir)
     else:
         print("⚠️ No SKIRT training files found.")
+
+    if len(ds_fire) > 0:
+        plot_16_samples(ds_fire, "FIRE_Quicklook_NoiseToClean", out_dir)
+    else:
+        print("⚠️ No FIRE training files found.")
     
     print("\n🎉 All 16-sample training diagnostics generated successfully!")
 

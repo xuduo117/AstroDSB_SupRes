@@ -6,7 +6,8 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 # Import datasets
-from .datasets import SyntheticAstroDataset, SkirtAstroDataset, CombinedSyntheticDataset
+# from .datasets import SyntheticAstroDataset, SkirtAstroDataset, CombinedSyntheticDataset
+from .datasets import SyntheticAstroDataset, SkirtAstroDataset, FireQuicklookDataset, CombinedSyntheticDataset
 
 # =====================================================================
 # THE FIX: Kill NumPy internal multithreading to prevent CPU Thrashing
@@ -66,11 +67,14 @@ def scan_and_split_files(root_dirs, pattern="**/*850um_tensor.npy", split_mode='
     print(f"  Train: {len(train_files)} files | Test: {len(test_files)} files")
     return train_files, test_files
 
+
 def get_dataloaders(cfg, log):
     split_mode = cfg.dataset.get('split_mode', 'physical_ood')
     ood_keywords = cfg.dataset.get('ood_keywords', ['I100'])
     seed = cfg.experiment.seed
-    skirt_fraction = cfg.dataset.get('skirt_fraction', 0.25)
+    
+    # Target fractions: 50% Dust, 25% SKIRT, 25% FIRE
+    fractions = cfg.dataset.get('dataset_fractions', (0.50, 0.25, 0.25))
 
     # 1. Load Raw Dust Data (850um)
     print("\n--- Scanning Raw Dust Data ---")
@@ -88,13 +92,23 @@ def get_dataloaders(cfg, log):
     )
     skirt_train_ds = SkirtAstroDataset(cfg, skirt_train, mode='train')
     skirt_val_ds = SkirtAstroDataset(cfg, skirt_val, mode='val')
+    
+    # 3. Load FIRE Quicklook Data (Using FIR band to match 850um dust goals)
+    fire_roots = cfg.dataset.get('fire_roots', ['/scratch/xuduo117/project_SKIRT/skirt_batch_runs_FIRE_quicklook_out/'])
+    print("\n--- Scanning FIRE Quicklook Data ---")
+    # Using '*_fir.npz' to explicitly grab the dust emission arrays
+    fire_train, fire_val = scan_and_split_files(
+        fire_roots, pattern="**/*_fir.npz", split_mode=split_mode, ood_keywords=ood_keywords, seed=seed
+    )
+    fire_train_ds = FireQuicklookDataset(cfg, fire_train, mode='train')
+    fire_val_ds = FireQuicklookDataset(cfg, fire_val, mode='val')
 
-    # 3. Combine Them (75% / 25%)
+    # 4. Combine Them (50% / 25% / 25%)
     if getattr(cfg, 'global_rank', 0) == 0:
-        log.info(f"🧪 MIXED SYNTHETIC MODE: Combining {1-skirt_fraction:.0%} Dust and {skirt_fraction:.0%} SKIRT.")
+        log.info(f"🧪 MIXED SYNTHETIC MODE: Combining {fractions[0]:.0%} Dust, {fractions[1]:.0%} SKIRT, and {fractions[2]:.0%} FIRE Quicklook.")
 
-    train_dataset = CombinedSyntheticDataset(dust_train_ds, skirt_train_ds, skirt_fraction=skirt_fraction)
-    val_dataset = CombinedSyntheticDataset(dust_val_ds, skirt_val_ds, skirt_fraction=skirt_fraction)
+    train_dataset = CombinedSyntheticDataset(dust_train_ds, skirt_train_ds, fire_train_ds, fractions=fractions)
+    val_dataset = CombinedSyntheticDataset(dust_val_ds, skirt_val_ds, fire_val_ds, fractions=fractions)
 
     is_dist = cfg.training.get('distributed', False) and (int(os.environ.get("WORLD_SIZE", 1)) > 1)
 
@@ -105,7 +119,6 @@ def get_dataloaders(cfg, log):
         train_sampler = None
         train_shuffle = True
 
-    # ---> ADDED PREFETCH_FACTOR AND WORKER_INIT_FN <---
     train_loader = DataLoader(
         train_dataset, 
         batch_size=cfg.dataset.batch_size, 

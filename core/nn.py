@@ -1,3 +1,10 @@
+# ---------------------------------------------------------------
+# Adapted from https://github.com/openai/guided-diffusion
+# (guided_diffusion/nn.py), Copyright (c) 2021 OpenAI, MIT License.
+# The license for the original version of this file can be found in
+# LICENSE_GUIDED_DIFFUSION.
+# ---------------------------------------------------------------
+
 import math
 import torch as th
 import torch.nn as nn

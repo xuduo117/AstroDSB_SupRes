@@ -1,0 +1,596 @@
+# =====================================================================
+# 0910: 0901 WITH ORDER 0 REMOVED FROM THE UPSAMPLING MIX, RE-WARM-STARTED
+# FROM 0825.
+#
+# ONE change from 0901, so this is a clean test of one hypothesis:
+#
+#     dataset.upsample.order_weights: {"0": 1, "1": 1, "3": 1}   (0901)
+#                                  -> {"1": 1, "3": 2}           (0910)
+#
+# WHY. 0901 came out measurably worse than 0825 when evaluated the way the
+# model is used, with order 3. The reason is not that order 0 is "unphysical",
+# it is that order 0 INVERTS THE TASK at the scales super-resolution is for.
+# Measured power in the upsampled condition as a fraction of the power in the
+# target the network must produce (40 turbulent fields, 51 -> 256):
+#
+#     scale         order 0   order 1   order 3
+#      6.7 px         0.30      0.02      0.00
+#      5.0 px         0.35      0.00      0.00
+#      2.9 px         1.32      0.01      0.00
+#     median 2.5-20   0.282     0.008     0.004
+#
+# Orders 1 and 3 leave the sub-beam band nearly EMPTY (under 1% of target
+# power), so the task there is unambiguously GENERATE. Order 0 fills the same
+# band with ~28% of the target power -- 130% at 2.9 px -- as block edges that
+# are spatially uncorrelated with the true structure, so on those samples the
+# sub-beam task is "destroy this, then generate something else". A third of the
+# training set asking for high-k suppression installs a suppression prior; at
+# inference with order 3 there is nothing to suppress, but the prior still
+# damps what the network generates, which reads as a reduced F.
+#
+# WHY {1: 1, 3: 2} AND NOT 50/50. Order 3 is the deployment kernel, so the
+# majority of training should sit on it: this puts 67% on-distribution against
+# 33% in 0901. Order 1 remains as the robustness perturbation, which is the
+# realistic ambiguity in real data (reproject/drizzle ~ linear, spline ~
+# cubic). Both are smooth interpolants, so neither ever teaches suppression.
+# Full derivation in the v17 block in data/datasets.py.
+#
+# BEFORE THE FIRST RUN -- NOTE THIS SEEDS FROM 0825, NOT 0901:
+#     mkdir -p results/astro_supres_dsb_0910
+#     cp results/astro_supres_dsb_0825/latest.pt results/astro_supres_dsb_0910/
+# If the 0901 weights carry the high-k suppression prior, warm-starting from
+# them inherits it, and 1000 epochs at ~1e-5 will not undo it. Start from the
+# last checkpoint known to be good.
+#
+# THEN DROP THE SCHEDULER STATE from that copy -- this is required, not
+# optional, and it is the second thing 0901 got wrong:
+#     python - <<'EOF'
+#     import torch
+#     p = 'results/astro_supres_dsb_0910/latest.pt'
+#     c = torch.load(p, map_location='cpu', weights_only=False)
+#     c.pop('scheduler_state', None)
+#     torch.save(c, p)
+#     EOF
+# CosineAnnealingLR keeps T_max in its state dict, so a restored scheduler
+# ignores `epochs:` below and keeps T_max = 6102 from the checkpoint. Past its
+# minimum the cosine turns back UP: 0901 ran epochs 6102-7102 with the LR
+# rising 1.0e-6 -> 7.4e-6 (7.4x the converged floor). With the state dropped
+# and learning_rate at 1e-5 below, a fresh scheduler gives a nearly flat
+# 1.00e-5 -> 9.52e-6 across the 1000 epochs, which is what a fine-tune wants.
+#
+# DIAGNOSTIC YOU CAN RUN ON 0901 WITHOUT RETRAINING. archive_interval is 100,
+# so you have 0901 checkpoints every 100 epochs, and the validation set is
+# IDENTICAL to 0825's by construction -- val_order is 3, val_level is 0.02,
+# val_low_fraction is 0, and both the low-noise and correlated-noise branches
+# are train-only (the augment=False path returns before either). So the 0901
+# val curve is directly comparable to the 0825 curve, and evaluating F, eta and
+# f_theta across the archived checkpoints separates the two causes:
+#   * all three degrade smoothly with epoch   -> the LR drift above
+#   * F degrades much more than eta, f_theta  -> the order-0 suppression prior
+# If that sweep shows the noise changes hurt too, the blocks to revert are
+# dataset.noise.low_prob (-> 0.0) and dataset.noise.corr_prob (-> 0.0), each of
+# which returns that piece to 0825 behaviour exactly and consumes no RNG.
+#
+# UNCHANGED FROM 0901: the low-noise observed branch (noise.low_prob 0.25) and
+# the correlated-noise branch (noise.corr_prob 0.5). Neither inverts the task
+# the way order 0 does -- they change the noise the model must remove, not the
+# sign of what it must do at sub-beam scales -- so they stay in while this run
+# tests the interpolation hypothesis alone.
+# =====================================================================
+#
+# ---------------------------------------------------------------------
+# INHERITED FROM 0901 AND 0825 (unchanged; kept for the record)
+# =====================================================================
+# 0901: SAME DATA SETUP AS 0825, WARM-STARTED FROM THE 0825 WEIGHTS, PLUS TWO
+# CHANGES, BOTH ABOUT MAKING THE CONDITION LOOK LIKE A REAL OBSERVED MAP.
+#
+# TWO changes from 0825, and they are the only ones. Everything else in this
+# file -- the diffuse block, the beams, stellar_prob, the mix, the model, the
+# batch and patch counts -- is 0825 verbatim.
+#
+#   1. dataset.upsample.order_weights: {"0": 1, "1": 1, "3": 1}
+#   2. dataset.noise.low_prob: 0.25   (+ the low_* / post_* levels with it)
+#   3. dataset.noise.corr_prob: 0.5   (+ corr_frac / corr_knee with it)
+#
+# --- CHANGE 1: THE UPSAMPLING KERNEL -----------------------------------------
+#
+# The condition is beam-convolved, resampled DOWN to planck_size (51) and then
+# back UP to patch_size (256) before the network sees it. Every run through 0825
+# did that last step with bicubic, so every training pair it ever saw carried
+# one fixed cubic-spline signature -- the same ringing beside bright edges, the
+# same interpolant between the 51 real samples. Nothing stops the network from
+# keying on that signature and reading sub-beam structure out of it: free score
+# in validation, where the signature is identical, and a systematic loss on a
+# real map that some other pipeline regridded. Real conditions come reprojected
+# by whatever the archive used -- drizzle/reproject (roughly linear), a
+# nearest-neighbour regrid, or a cubic spline.
+#
+# So the order is now drawn per sample, a third each (scipy convention):
+#   order 0  nearest / pixel replication -- blocky, the 51 samples survive exact
+#   order 1  bilinear
+#   order 3  bicubic -- what 0825 and everything before it used
+# Details, and why the GT resample and the DOWNsample to planck_size stay
+# bicubic, are in the v14 header block in data/datasets.py.
+#
+# --- CHANGE 2: THE LOW-NOISE OBSERVED REGIME ---------------------------------
+#
+# Real low-resolution data has noise, but LOW-level and Gaussian, and the model
+# has to hold up on it. Through 0825 it effectively never saw that case. The
+# detector noise is injected at planck_size (51x51) -- the right place, that is
+# where a detector samples -- but its level came from
+#     local_std * U(0.05, 0.30) * U(0.4, 0.8)
+# which has a HARD FLOOR at 2% of the map's own std and a median near 12.5%.
+#
+# Low-noise samples did exist, but only via clean_mode (clean_prob, 0.15) --
+# and clean_mode is not "a real map with little noise", it also switches OFF
+# the CMB, the striping and the post-upsample term, because it models a space
+# telescope. Measured over the realised 0825 training mix, 93% of samples with
+# under 3% noise were clean_mode samples. The case that matters for real data
+# -- the full contaminant chain (CMB, striping, CIB) with only low-level
+# Gaussian detector noise -- was missing.
+#
+# low_prob adds it: on that fraction of the non-clean training samples the
+# detector noise is drawn LOG-uniform from low_range instead, and the striping
+# and the post-upsample term are scaled down with it. Scaling all three matters
+# -- the post-upsample term is white on the TARGET grid (it never passes
+# through the interpolation), so on a 1% sample the unscaled term would be 2.3x
+# the real low-res noise and 0.5% would be 4.5x, teaching exactly the wrong
+# texture; unscaled 10-30% stripes would tower over it too. That term is scaled
+# as a MULTIPLE of the sample's own drawn level (post_low_factor), not by an
+# absolute range, because an absolute range still leaves a corner -- lowest
+# noise drawn against the highest term -- where it dominates: measured 0.41x at
+# a 0.5% draw and worse below. As a factor the ratio is pinned at 0.08-0.33x.
+#
+# MEASURED effect on the realised training mix (clean_prob 0.15, low_prob 0.25):
+#
+#     noise below      0825      0901
+#       0.5%            6.5%     13.7%
+#       1.0%            9.3%     23.0%
+#       2.0%           15.3%     34.5%
+#       3.0%           16.4%     36.9%
+#
+# and the level histogram has no gap anywhere from 0 to 25%, which was the
+# stated design goal of the v3 noise continuum and is now actually met.
+# Details in the v15 header block in data/datasets.py.
+#
+# --- CHANGE 3: THE NOISE IS NO LONGER PURE WHITE -----------------------------
+#
+# Denoising is ALREADY the objective here and always has been -- the target is
+# built from act_blurred and never receives instrument noise, and the DSB runs
+# from the noisy upsampled condition to that clean target. What was wrong is
+# that the 2D noise was pure WHITE (measured lag-1 autocorrelation -0.004).
+# Real low-resolution data is not: scanning instruments leave 1/f-correlated
+# noise, and a network trained only on white noise reads correlated noise blobs
+# as real structure and super-resolves them into filaments that are not there.
+#
+# corr_prob moves corr_frac of the noise VARIANCE into a correlated field. The
+# split is variance-preserving, so the realised noise level -- and every SNR
+# statistic, including everything measured for CHANGE 2 above -- is unchanged;
+# only the noise morphology broadens.
+#
+# THE KNEE IS THE WHOLE GAME, AND IT IS WHY corr_knee IS NOT 3000. The
+# generator (generate_synthetic_act_noise, which was in the file all along with
+# no call sites) hardcoded a knee at ell = 3000. That is right for the TARGET
+# grid, where ell reaches ~21600 and the knee sits mid-band. On the CONDITION
+# grid ell only reaches ~4300, so a knee at 3000 boosts the whole band and
+# produces this:
+#
+#     mean 1/e correlation length on the 51x51 condition grid
+#       CMB (injected at 768, beamed, downsampled)     9.16 px   (flat across
+#                                                      the whole planck_fwhm
+#                                                      3-21 draw)
+#       correlated noise, knee 3000                    9.02 px   <-- SAME FIELD
+#       correlated noise, knee 2000                    8.34 px
+#       correlated noise, knee 1400                    5.88 px
+#       correlated noise, knee 1200                    4.34 px   <-- 0.47x, ok
+#       correlated noise, knee 1000                    2.74 px
+#       correlated noise, knee  800                    0.92 px
+#
+# The CMB is SKY: injected before the beam split, so it is in both endpoints and
+# the target keeps it -- the model has to SHARPEN it. This noise is in the
+# condition only, so the model has to REMOVE it. At knee 3000 the two are the
+# same field to within a correlation length, the problem is unidentifiable, and
+# the MSE-optimal answer is to partially damp both -- losing exactly the
+# Gaussian-field robustness that matters. 800-1200 spans barely-correlated to
+# clearly-correlated (4.3 px here, ~20 px after the upsample) with all of it
+# under half the CMB scale. The transition is sharp between 800 and 1400, so do
+# not raise it.
+#
+# NOT changed, deliberately: nothing teaches the model to output zeros on a
+# signal-free patch. is_null_patch already zeroes the signal and forces
+# heavy_cib_mode, so an empty patch carries CMB and CIB in BOTH endpoints and
+# the model learns to REPRODUCE the Gaussian field rather than erase it. That
+# is the wanted behaviour -- some of what looks like noise is sky.
+#
+# --- THE DESIGN INVARIANT (unchanged since 0701; do not drift from it) -------
+#
+# EVERY OBSERVED FEATURE IS REAL AND BELONGS IN THE GROUND TRUTH, THE CMB
+# INCLUDED. Only tiny fluctuations (Gaussian noise) and instrument distortion
+# are absent from the target.
+#
+# The 0818/0825 models denoise well and preserve the CMB WITHOUT being told to,
+# and this is why: the target is built from act_blurred, which never receives
+# instrument noise, while every sky component is added to base_signal BEFORE
+# the beam split and therefore lands in BOTH endpoints. Denoising has always
+# been the objective; nothing about it is new in 0901.
+#
+# Mechanically:
+#   SKY        -> added to base_signal before the beam split, so it is in the
+#                 condition AND the target. The model SHARPENS it.
+#                 diffuse field, cirrus, magnetic striations, CMB, CIB,
+#                 point sources, stellar field
+#   INSTRUMENT -> added to the condition only. The model REMOVES it.
+#                 detector noise (white + shot), correlated 1/f noise,
+#                 pepper speckle, scanning stripes, the post-upsample white
+#                 term, the sub-pixel misregistration
+#   TARGET-ONLY-> must never exist. It would ask the model to hallucinate.
+#
+# Verified empirically, not by reading: run
+#     python check_endpoint_split.py configs/SuperRes_dsb_0901.yaml
+# after ANY edit to data/datasets.py. It toggles each component with the RNG
+# stream held fixed and reports which endpoint each one reaches; it exits
+# non-zero if anything has moved. Confirmed to hold for this config and for
+# 0825, with no target-only component anywhere.
+#
+# Two couplings are deliberate and benign, and the checker pins them so they do
+# not read as leaks:
+#   * the arcsinh constants (alpha, t_min, t_max) come from the NOISY input and
+#     are shared with the target, so removing the noise shifts the NORMALISED
+#     target by ~0.003 (max 0.012) as alpha moves 0.4% (max 1.4%). The target's
+#     physical content stays noise-free, and at inference those constants are
+#     computed from the observed map and inverted with it -- self-consistent.
+#   * TF.rotate pads the corners it rotates into frame with c_fill =
+#     median(noisy input), for BOTH endpoints identically. Measured effect on
+#     the target: <= 0.0007 in [0,1] units, 100% of it outside the inscribed
+#     circle, i.e. only in the synthetic padding.
+#
+# Note for CHANGE 3 below: the correlated noise is INSTRUMENT, so the model must
+# remove it, which is why its scale is kept away from the CMB's. It is also
+# bounded in amplitude -- measured at 6.2% of the condition's real structure
+# (p95 12.4%, max 16.2%), against sky contaminants capped at 30-150% of the
+# signal std. So it cannot dominate the real structure it sits next to.
+# -----------------------------------------------------------------------------
+#
+# BEFORE THE FIRST RUN: seed the new run directory from 0825.
+#     mkdir -p results/astro_supres_dsb_0901
+#     cp results/astro_supres_dsb_0825/latest.pt results/astro_supres_dsb_0901/
+# The trainer then resumes from that copy and overwrites it as the run
+# proceeds, so 0825 is never touched.
+#
+# WHAT TO EXPECT, and one thing to decide:
+#
+#  * THE VAL CURVE DOES NOT STEP. val_order is 3 below, so validation patches
+#    are still upsampled bicubic and the val number stays comparable to the
+#    0825 curve -- the 1000 new epochs read as a continuation of it. That is
+#    the point of pinning it. The cost is that the two new kernels are then
+#    invisible to every metric you watch. Once the run is stable, either set
+#    `val_order: null` (order hashed per patch, fixed every epoch, all three
+#    kernels covered -- and a NEW val baseline, exactly like
+#    val_diffuse_fraction was in 0825), or leave this run pinned and evaluate
+#    order 0 / 1 robustness offline instead.
+#
+#  * THE LR. epochs goes 6102 -> 7102 to buy 1000 more epochs, but that does
+#    NOT re-stretch the cosine: load_checkpoint() restores scheduler_state, and
+#    CosineAnnealingLR keeps T_max in its state dict, so T_max stays 6102 from
+#    the 0825 checkpoint. Past T_max the recursive cosine turns back UP, so
+#    epochs 6103-7102 would climb from eta_min (1e-6) back toward 1e-4 -- a
+#    warm restart nobody asked for, right when the model should be settling
+#    into the new kernel mix. DECIDE ONE:
+#      (a) flat fine-tuning LR at the 0825 floor -- RECOMMENDED, and what the
+#          new kernels actually need. Drop the scheduler from the seeded copy:
+#            python - <<'EOF'
+#            import torch
+#            p = 'results/astro_supres_dsb_0901/latest.pt'
+#            c = torch.load(p, map_location='cpu', weights_only=False)
+#            c.pop('scheduler_state', None)
+#            torch.save(c, p)
+#            EOF
+#          A fresh CosineAnnealingLR(T_max=7102) then starts from
+#          last_epoch=-1 while start_epoch is ~6102, i.e. it holds near the
+#          base LR 1e-4 -- so ALSO lower model.learning_rate (1e-5 is a
+#          reasonable fine-tune) if you take this path.
+#      (b) leave it as-is and accept the warm restart. Watch the first ~50
+#          epochs: if the val loss jumps and does not come back, it is the LR,
+#          not the interpolation change.
+#
+# =====================================================================
+#
+# ---------------------------------------------------------------------
+# INHERITED FROM 0825 (still in force, unchanged; kept for the record)
+# =====================================================================
+# 0825: DIFFUSE-FIRST RETRAIN, warm-started from the 0818 weights.
+#
+# What 0818 got wrong: the model sharpens compact sources well and does a poor
+# job on extended emission. Three changes, all inside data/datasets.py (v13):
+#
+#   1. stellar_prob 0.05 -> 0.00. The v9 synthetic star/cluster/galaxy branch is
+#      off. If you would rather keep field stars and galaxy disks and drop only
+#      the crowded cluster cores, set stellar_prob back to ~0.03 and edit
+#      STELLAR_MODE_WEIGHTS['cluster'] = 0.0 at the top of datasets.py instead.
+#
+#   2. diffuse_prob 0.18 -> 0.35 with the second-generation generator
+#      (turb_version 2), whose parameters are FIT TO REAL HERSCHEL POLARIS
+#      CIRRUS rather than chosen by eye. The two things v11 had wrong were the
+#      contrast (2x too high -- it used molecular-cloud Mach numbers for a
+#      diffuse field) and the spectral slope (~0.5 too shallow). See the
+#      `diffuse:` block below and the comment above generate_turbulent_column_v2.
+#
+#   3. Diffuse samples get their own, much smaller, target beam. act_fwhm is in
+#      TARGET pixels (0.5' each): the shared draw is 0.4-3.5, which at the top
+#      end smooths a diffuse field over 3.5 pixels and leaves the GT with no
+#      small-scale texture to learn. 0.3-1.6 keeps the turbulent cascade alive
+#      in the GT down to ~1-2 target pixels.
+#
+# BEFORE THE FIRST RUN: create results/astro_supres_dsb_0825/ and copy the
+# checkpoint you want to warm-start from into it as latest.pt, e.g.
+#     mkdir -p results/astro_supres_dsb_0825
+#     cp results/astro_supres_dsb_0818/latest.pt results/astro_supres_dsb_0825/
+# The trainer then resumes from it and overwrites it as the run proceeds, so
+# 0818 is never touched.
+#
+# TWO THINGS TO EXPECT ON THE FIRST EPOCH, both benign:
+#   * The val loss steps. val_diffuse_fraction is 0.20 here (0818 ran 0.00), so
+#     a fifth of the validation patches are now diffuse fields. That is
+#     deliberate -- with it at 0.00 the diffuse work is invisible to every
+#     metric you watch and you would be tuning blind -- but it means the val
+#     number is a NEW baseline and is not comparable to the 0818 curve.
+#   * start_epoch and the LR come from the checkpoint. load_checkpoint()
+#     restores optimizer, EMA, scaler AND scheduler state, so the cosine LR
+#     picks up where 0818 left it and `epochs:` below does not re-stretch it.
+#     If you want a fresh, flat fine-tuning LR, drop 'scheduler_state' (and
+#     optionally 'optimizer_state') from the seeded latest.pt before starting.
+# =====================================================================
+
+# General Experiment Information
+experiment:
+  name: "astro_supres_dsb_0910"
+  seed: 42
+  base_log_dir: "results"
+  resume: True
+  # Self-referential on purpose: seed this file once from a previous run (see
+  # the header), then the run resumes itself after every restart.
+  checkpoint_path: "results/astro_supres_dsb_0910/latest.pt"
+
+# Dataset Configuration
+dataset:
+  type: "ISRF"
+  roots:
+    - '/scratch/xuduo117/Project_DSB/AstroDSB_SupRes/ML_data/'
+  skirt_roots:
+    - '/scratch/xuduo117/project_SKIRT/Observational_Galleries/'
+  # The live mix is still DATASET_FRACTIONS_OVERRIDE in data/datasets.py,
+  # currently (dust 0.50, SKIRT 0.50, FIRE 0.00); the [Mix] log line at startup
+  # echoes what was actually used. `skirt_fraction` here is a dead key.
+
+  # CHANGED 0825: the synthetic stellar branch is OFF. It replaced the gas crop
+  # with a star field / cluster / galaxy disk and was one of several sources of
+  # compact-structure bias; at 0.05 it fired on ~5% of samples.
+  stellar_prob: 0.0
+  clean_prob: 0.15
+
+  # --- CHANGED 0825: diffuse branch ---------------------------------------
+  # With stellar_prob at 0 the `elif` chain gives diffuse_prob cleanly, so this
+  # is the true fraction of samples that are gravity-free fields.
+  diffuse_prob: 0.35          # was 0.18
+  diffuse_blend_prob: 0.35    # of those, the fraction keeping some real crop
+  diffuse_bypass_prob: 0.25   # was 0.15. The informativeness gate cannot tell a
+                              # dead pedestal from a genuine low-contrast field,
+                              # so it strips real diffuse morphology; this is the
+                              # fraction admitted unjudged.
+  val_diffuse_fraction: 0.20  # was 0.0 -- see the header note on the val curve
+
+  diffuse:
+    turb_version: 2           # 1 = v11 log-normal, 2 = v13 cascade generator
+    gen_size: 384             # build grid; must stay above target_size*1.5=384
+    bend_prob: 0.45           # explicit wide low-contrast ridges on top
+
+    # GENERATOR SHAPE -- FIT TO REAL HERSCHEL 350um POLARIS CIRRUS, not chosen
+    # by eye. Eight 384^2 fully-covered crops from
+    # Herschel_test/aligned_Polaris_herschel_350um_GT_1x.npy give the target;
+    # these values reproduce it to a few percent:
+    #
+    #   quantity                REAL Polaris    v11 (0818)    v13 (this)
+    #   P(k) slope k=12-90         -3.06          -2.55         -3.11
+    #   sigma_lnN                   0.30           0.49          0.29
+    #   flux in brightest 1%        2.2%           3.3%          2.1%
+    #   P(k) axis ratio             1.17           1.03          1.17
+    #   cost per field (768^2)       --            54 ms         31 ms
+    #
+    # The two real errors in v11 were CONTRAST (Mach 1.5-8 is the molecular-cloud
+    # range, not diffuse cirrus -- it made sigma_lnN ~2x too high) and a SLOPE
+    # that was ~0.5 too shallow. Fixing those is most of the improvement.
+    beta: [2.9, 3.6]             # REQUESTED exponent, NOT the measured slope.
+                                 # The k-space ellipse and the k_inj knee flatten
+                                 # the realised angle-averaged slope: 2.9-3.6
+                                 # comes out at -3.11, the Polaris value.
+                                 # Re-measure if you change anisotropy/inject_k.
+    mach: [0.7, 2.2]             # transonic -> sigma_lnN ~0.29 (Polaris: 0.30).
+                                 # v11 used [1.5, 8.0], which is molecular-cloud
+                                 # turbulence and far too high-contrast here.
+    anisotropy: [1.0, 1.3]       # k-space axis ratio -> B-aligned eddies. Larger
+                                 # values flatten the angle-averaged P(k); the
+                                 # strong anisotropy comes from the striations.
+    inject_k: [0.8, 2.5]         # driving scale, cycles per box: turbulence
+                                 # driven on 1/2 to the full field, which is what
+                                 # sets the size of the voids and lanes.
+    cascade_octaves: 4
+    cascade_strength: 0.0        # OFF. Set [0.3, 0.8] for intermittency
+                                 # (zeta6/zeta3 2.01 -> 1.91, vs Polaris 1.89).
+                                 # It matches every scalar statistic and STILL
+                                 # looks wrong next to Polaris -- see below.
+    warp_frac: 0.0               # OFF. Set [0.0, 0.025] for phase coherence.
+                                 # Both switches produce a fine curled,
+                                 # fingerprint-like texture that real cirrus does
+                                 # not have. They are kept because they are
+                                 # physically motivated and cheap to re-enable,
+                                 # but if you turn either on, LOOK at the fields
+                                 # (plot_diffuse_samples.py) -- the scalar
+                                 # statistics cannot see the difference.
+
+    # Beams for diffuse samples only, in TARGET pixels (0.5' each).
+    # Non-diffuse samples keep the shared 0.4-3.5 x 3.0-6.0 draw.
+    act_fwhm: [0.3, 1.6]         # small target beam: keeps the cascade in the GT
+    planck_ratio: [3.0, 6.0]     # condition/target beam ratio. The input is
+                                 # resampled to planck_size regardless, so the
+                                 # real SR factor is fixed at 256/51 ~ 5x; this
+                                 # only sets beam- vs pixel-limited. Drop to
+                                 # [2.5, 4.0] to make diffuse samples easier
+                                 # than the rest, [4.0, 12.0] to make them
+                                 # harder and closer to the true Planck beam.
+    val_act_fwhm: 1.0            # fixed (not drawn) so val is reproducible
+    val_planck_fwhm: 5.0
+  # ------------------------------------------------------------------------
+
+  # --- CHANGED 0901: condition upsampling kernel -------------------------
+  # THE ONLY BEHAVIOURAL CHANGE IN THIS FILE. Which interpolation lifts the
+  # condition from planck_size (51) back to patch_size (256), drawn per sample.
+  # Keys are the scipy/skimage order, QUOTED (easydict cannot setattr an int
+  # key); weights are relative and normalized, so 1/1/1 is a third each.
+  #   "0" nearest / pixel replication   "1" bilinear   "3" bicubic
+  # Omit this whole block, or set {"3": 1}, to reproduce 0825 exactly.
+  upsample:
+    # CHANGED 0910: order 0 removed, and order 3 (the deployment kernel)
+    # weighted 2:1 over order 1 so two thirds of training is on-distribution.
+    # DO NOT re-add "0" -- see the header and the v17 block in datasets.py.
+    order_weights: {"1": 1.0, "3": 2.0}
+    # Validation kernel. 3 keeps the val curve comparable to the 0825 curve
+    # (see the header). null -> hashed per (file, patch): all three kernels,
+    # identical every epoch, and a NEW val baseline.
+    val_order: 3
+  # ------------------------------------------------------------------------
+
+  primary_indices: [0]   # 4.5um, 24um, 250um
+  cond_indices: [0]      # Observations used for bridge guidance
+  split_mode: "physical_ood"  ### "random"
+  ood_keywords: ["I100"]  # You can add more like ["I100", "B1"]
+  # test_size: 0.01
+  batch_size: 2
+  num_workers: 16
+  persistent_workers: true
+  prefetch_factor: 4          # Forces workers to prepare 4 batches in advance
+
+  patch_size: 256
+  num_patches_train: 8
+  num_patches_val: 4
+  mask_taper_sigma: 1.2
+  augment: true
+
+  # Generative Robustness (Curriculum)
+  artifacts:
+    enable: true
+    activation_epoch: 50
+    prob_bad_pixel: 0.001
+    prob_stripe: 0.005
+    mask_loss: False            # Use masking to handle rotation/artifacts
+
+  # --- CHANGED 0901: low-noise observed regime (see CHANGE 2 in the header) --
+  noise:
+    m2_noise_level: 0.01      # DEAD KEY, read by nothing. Kept only because it
+                              # has been in every yaml since 0701; noise_cfg_from
+                              # accepts it so existing configs still load.
+
+    low_prob: 0.25            # fraction of the NON-CLEAN train samples that get
+                              # the low-noise treatment. 0.0 = 0825 behaviour
+                              # exactly (and consumes no random number, so the
+                              # augmentation RNG stream is untouched too).
+    low_range: [0.003, 0.03]  # BASE noise level, log-uniform. Same quantity as
+                              # the ordinary U(0.05, 0.30): realised total noise
+                              # comes out p5 0.22%, median 0.72%, p95 2.39% of
+                              # the map's own std, which fills the 0-2% gap
+                              # under the ordinary floor and overlaps it on top.
+    # --- CHANGED 0901 (change 3): correlated, non-white noise --------------
+    # Variance-preserving: corr_frac is a fraction of the noise VARIANCE, so
+    # turning this on does not change the noise level, only its morphology.
+    corr_prob: 0.5            # of the noisy samples (applies to the low-noise
+                              # branch too -- real low-noise data is correlated
+                              # as well). 0.0 = pure white, i.e. v15 behaviour,
+                              # and consumes no random number.
+    corr_frac: [0.2, 0.6]     # fraction of the noise variance that is
+                              # correlated rather than white
+    corr_knee: [800.0, 1200.0]  # ell knee -> 0.9-4.3 px correlation length on
+                              # the 51x51 condition grid, 0.10-0.47x the CMB
+                              # scale there. DO NOT raise it: 1400 already
+                              # reaches 0.64x and 3000 is indistinguishable from
+                              # the CMB, which the target keeps. See the table
+                              # in CHANGE 3 in the header.
+    corr_alpha: 3.0           # slope of the 1/f boost below the knee
+
+    pepper_prob: 0.0          # high-frequency speckle, the other generator in
+                              # the file that had no call sites. OFF, and
+                              # riskier than the correlated component: at ~1 px
+                              # it sits where the CIB and the injected point
+                              # sources sit, and those are in BOTH endpoints,
+                              # so it recreates the same keep-or-remove
+                              # ambiguity at the opposite end of the spectrum.
+    pepper_frac: [0.05, 0.2]
+    # ------------------------------------------------------------------------
+
+    low_stripe_range: [0.005, 0.03]   # striping on low-noise samples. ABSOLUTE
+                                      # on purpose: residual striping is a
+                                      # scanning systematic, not a multiple of
+                                      # the white noise, and a real map can be
+                                      # stripe-dominated at low noise.
+                                      # (ordinary: 0.1-0.3)
+    post_low_factor: [0.05, 0.2]      # post-upsample white term as a MULTIPLE
+                                      # of the level drawn above, not an
+                                      # absolute range -- an absolute range
+                                      # leaves a corner where that term (which
+                                      # is white on the TARGET grid) still
+                                      # dominates the real low-res noise.
+                                      # Pins the ratio at 0.08-0.33x, where the
+                                      # ordinary regime already sits (0.16x).
+
+    # The ordinary levels, spelled out so they are visible and tunable. These
+    # ARE the 0825/v3 values -- do not change them if you want the high-noise
+    # half of the distribution to stay comparable to the 0825 run.
+    stripe_range: [0.1, 0.3]
+    post_range: [0.01, 0.03]
+
+    # Validation. val_level 0.02 is the 0825 constant, so the val curve stays
+    # comparable. val_low_fraction > 0 makes a hashed subset of val patches
+    # low-noise (fixed level, identical every epoch) -- which is the only way to
+    # SEE this change in the val metric, and moves the baseline, exactly like
+    # val_diffuse_fraction did in 0825. Turn it on together with val_order: null
+    # if you decide to re-baseline.
+    val_level: 0.02
+    val_low_fraction: 0.0
+    val_low_level: 0.01
+  # ------------------------------------------------------------------------
+
+# Model & Bridge Architecture
+model:
+  type: "dsb"                  # <--- Logic switch for Factory
+  in_channels: 1
+  out_channels: 1
+  cond_channels: 1     # For the Planck condition
+
+  base_channels: 128
+  num_res_blocks: 2
+  attention_resolutions: [32,16, 8]
+  dropout: 0.1
+  channel_mult: [1,1, 2, 2, 4,4]
+
+  use_observable_enhancement: true
+
+  # Bridge Settings
+  intervals: 1000
+  beta_max: 0.02
+  learning_rate: 0.00001      # CHANGED 0910: 1e-4 -> 1e-5 for the fine-tune.
+                              # Requires dropping scheduler_state from the
+                              # seeded checkpoint (see header), which gives a
+                              # nearly flat 1.00e-5 -> 9.52e-6 over 1000 epochs.
+  ema_decay: 0.999
+
+# Training Control (Synced with DDPM version)
+training:
+  epochs: 9102                 # 6102 (the 0825 endpoint we seed from) + 1000.
+  snapshot_iter_freq: 5000     # Mid-epoch visual/checkpoint check
+  archive_interval: 100        # Permanent checkpoint every 100 epochs
+  snapshot_epoch_freq: 1       # End-of-epoch full validation
+  snapshot_skip_steps: 50      # Fast sampling for validation snapshots
+  distributed: true
+
+# Inference/Sliding Window Logic
+inference:
+  sampling_skip_steps: 10      # High quality but faster than training
+  stride: 32

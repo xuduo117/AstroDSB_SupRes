@@ -1,0 +1,19 @@
+{
+  "title": "AstroDSB_SupRes: Diffusion Schrodinger Bridge super-resolution code (0910 model)",
+  "upload_type": "software",
+  "version": "1.0.0",
+  "description": "<p>Training and inference code of the Astro-DSB super-resolution model (0910 configuration, the model used in the paper): data loader with the degradation model, bridge diffusion, network, sliding-window inference with Hann blending. Trained weights, analysis scripts and the released maps are in a separate Zenodo record, linked under related works and cited in the paper.</p><p>This repository is for the paper Astro-DSB: Physics-Informed Generative Super-Resolution for Astronomical Imaging Surveys by Duo Xu. It is associated with the manuscript number AAS81737.</p>",
+  "creators": [
+    {
+      "name": "Xu, Duo",
+      "affiliation": "Canadian Institute for Theoretical Astrophysics, University of Toronto",
+      "orcid": "0000-0001-6216-8931"
+    }
+  ],
+  "keywords": ["super-resolution", "diffusion models", "Schrodinger bridge", "interstellar dust", "Planck", "ACT", "astronomy software"],
+  "communities": [{"identifier": "aas"}],
+  "related_identifiers": [
+    {"identifier": "https://github.com/L-YeZhu/AstroDSB", "relation": "isDerivedFrom", "scheme": "url"},
+    {"identifier": "https://github.com/NVlabs/I2SB", "relation": "isDerivedFrom", "scheme": "url"}
+  ]
+}

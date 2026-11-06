@@ -1,22 +1,11 @@
-# Keep the data folder but ignore specific heavy folders
-act_inference_data/
-CO12_npyfile/
-cropped_inference_data/
-diagnostics/
-final_super_res_maps/
-I100_npyfile/
-logs/
-results/
-Test_data/
-uncertainty_results/
-
-# Ignore Python cache files
 __pycache__/
 *.pyc
-
-# Heavy file extensions safety net
+*.npy
+*.npz
 *.pt
 *.pth
+*.fits
 *.h5
-*.ckpt
-*.npy
+results/
+logs/
+wandb/

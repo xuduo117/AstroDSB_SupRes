@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper and the archived code."
+title: "AstroDSB_SupRes: Diffusion Schrodinger Bridge super-resolution code (0910 model)"
+version: 1.0.0
+# doi: 10.5281/zenodo.FILL_IN   (add after the Zenodo release, then tag a new patch version if wanted)
+repository-code: "https://github.com/xuduo117/AstroDSB_SupRes"
+# license: fill in after the licence decision (the NVIDIA Source Code License has no SPDX id;
+# leave this key out in that case and keep LICENSE in the repository)
+authors:
+  - family-names: Xu
+    given-names: Duo
+    orcid: "https://orcid.org/0000-0001-6216-8931"
+    affiliation: "Canadian Institute for Theoretical Astrophysics, University of Toronto"

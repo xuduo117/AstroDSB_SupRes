@@ -1,10 +1,10 @@
 # General Experiment Information
 experiment:
-  name: "astro_supres_dsb"
+  name: "astro_supres_dsb_0818"
   seed: 42
   base_log_dir: "results"
   resume: True  
-  checkpoint_path: "results/astro_supres_dsb/latest.pt"
+  checkpoint_path: "results/astro_supres_dsb_0818/latest.pt"
 
 # Dataset Configuration
 dataset:
@@ -13,7 +13,22 @@ dataset:
     - '/scratch/xuduo117/Project_DSB/AstroDSB_SupRes/ML_data/'
   skirt_roots:
     - '/scratch/xuduo117/project_SKIRT/Observational_Galleries/'
-  skirt_fraction: 0.25
+  # NOTE: `skirt_fraction` used to live here and is now a dead key -- only
+  # data/factory_backup2.py still reads it. The live mix is set by
+  # DATASET_FRACTIONS_OVERRIDE in data/datasets.py, currently
+  # (dust 0.50, SKIRT 0.50, FIRE 0.00), and is echoed in the [Mix] log line at
+  # startup. `fire_roots` is left unset on purpose: factory.py still scans its
+  # default path and builds the dataset, but the 0.00 weight means it is never
+  # sampled, and the log says so.
+
+  # Set explicitly rather than left to the 0.12 default. The diffuse branch in
+  # datasets.py is an `elif` after the stellar branch, so stellar_prob competes
+  # with it directly -- but more importantly the injected star fields are one of
+  # the sources of compact structure that the gravity-free diffuse work exists
+  # to counter. At the 0.12 default this run would inject them 2.4x more often
+  # than the 0701 run did (measured: 11.98% vs 5.00% of samples).
+  stellar_prob: 0.05
+  clean_prob: 0.15
 
   primary_indices: [0]   # 4.5um, 24um, 250um
   cond_indices: [0]      # Observations used for bridge guidance
@@ -65,7 +80,7 @@ model:
 
 # Training Control (Synced with DDPM version)
 training:
-  epochs: 4102
+  epochs: 6102
   snapshot_iter_freq: 5000     # Mid-epoch visual/checkpoint check
   archive_interval: 100        # Permanent checkpoint every 100 epochs
   snapshot_epoch_freq: 1       # End-of-epoch full validation

@@ -33,4 +33,4 @@ RANDOM_PORT=$(shuf -i 20000-65000 -n 1)
 torchrun \
     --nproc_per_node=4 \
     --master_port=$RANDOM_PORT \
-    main.py --config configs/SuperRes_dsb.yaml
+    main.py --config configs/SuperRes_dsb_0910.yaml

@@ -26,5 +26,6 @@ module load opencv
 source /home/xuduo117/py312/bin/activate
 
 
-python inference_chunks.py --config configs/SuperRes_dsb.yaml  --data_dir ./cropped_inference_data/ --batch_size 64
 # python inference_chunks.py --config configs/SuperRes_dsb.yaml  --data_dir ./cropped_inference_data/ --batch_size 64
+# python inference_chunks.py --config configs/SuperRes_dsb_0701.yaml  --data_dir ./cropped_inference_data_0701/ --batch_size 64
+python inference_chunks.py --config configs/SuperRes_dsb_0910.yaml  --data_dir ./cropped_inference_data_0910/ --batch_size 64

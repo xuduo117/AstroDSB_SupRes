@@ -1,0 +1,205 @@
+# =====================================================================
+# 0825: DIFFUSE-FIRST RETRAIN, warm-started from the 0818 weights.
+#
+# What 0818 got wrong: the model sharpens compact sources well and does a poor
+# job on extended emission. Three changes, all inside data/datasets.py (v13):
+#
+#   1. stellar_prob 0.05 -> 0.00. The v9 synthetic star/cluster/galaxy branch is
+#      off. If you would rather keep field stars and galaxy disks and drop only
+#      the crowded cluster cores, set stellar_prob back to ~0.03 and edit
+#      STELLAR_MODE_WEIGHTS['cluster'] = 0.0 at the top of datasets.py instead.
+#
+#   2. diffuse_prob 0.18 -> 0.35 with the second-generation generator
+#      (turb_version 2), whose parameters are FIT TO REAL HERSCHEL POLARIS
+#      CIRRUS rather than chosen by eye. The two things v11 had wrong were the
+#      contrast (2x too high -- it used molecular-cloud Mach numbers for a
+#      diffuse field) and the spectral slope (~0.5 too shallow). See the
+#      `diffuse:` block below and the comment above generate_turbulent_column_v2.
+#
+#   3. Diffuse samples get their own, much smaller, target beam. act_fwhm is in
+#      TARGET pixels (0.5' each): the shared draw is 0.4-3.5, which at the top
+#      end smooths a diffuse field over 3.5 pixels and leaves the GT with no
+#      small-scale texture to learn. 0.3-1.6 keeps the turbulent cascade alive
+#      in the GT down to ~1-2 target pixels.
+#
+# BEFORE THE FIRST RUN: create results/astro_supres_dsb_0825/ and copy the
+# checkpoint you want to warm-start from into it as latest.pt, e.g.
+#     mkdir -p results/astro_supres_dsb_0825
+#     cp results/astro_supres_dsb_0818/latest.pt results/astro_supres_dsb_0825/
+# The trainer then resumes from it and overwrites it as the run proceeds, so
+# 0818 is never touched.
+#
+# TWO THINGS TO EXPECT ON THE FIRST EPOCH, both benign:
+#   * The val loss steps. val_diffuse_fraction is 0.20 here (0818 ran 0.00), so
+#     a fifth of the validation patches are now diffuse fields. That is
+#     deliberate -- with it at 0.00 the diffuse work is invisible to every
+#     metric you watch and you would be tuning blind -- but it means the val
+#     number is a NEW baseline and is not comparable to the 0818 curve.
+#   * start_epoch and the LR come from the checkpoint. load_checkpoint()
+#     restores optimizer, EMA, scaler AND scheduler state, so the cosine LR
+#     picks up where 0818 left it and `epochs:` below does not re-stretch it.
+#     If you want a fresh, flat fine-tuning LR, drop 'scheduler_state' (and
+#     optionally 'optimizer_state') from the seeded latest.pt before starting.
+# =====================================================================
+
+# General Experiment Information
+experiment:
+  name: "astro_supres_dsb_0825"
+  seed: 42
+  base_log_dir: "results"
+  resume: True
+  # Self-referential on purpose: seed this file once from a previous run (see
+  # the header), then the run resumes itself after every restart.
+  checkpoint_path: "results/astro_supres_dsb_0825/latest.pt"
+
+# Dataset Configuration
+dataset:
+  type: "ISRF"
+  roots:
+    - '/scratch/xuduo117/Project_DSB/AstroDSB_SupRes/ML_data/'
+  skirt_roots:
+    - '/scratch/xuduo117/project_SKIRT/Observational_Galleries/'
+  # The live mix is still DATASET_FRACTIONS_OVERRIDE in data/datasets.py,
+  # currently (dust 0.50, SKIRT 0.50, FIRE 0.00); the [Mix] log line at startup
+  # echoes what was actually used. `skirt_fraction` here is a dead key.
+
+  # CHANGED 0825: the synthetic stellar branch is OFF. It replaced the gas crop
+  # with a star field / cluster / galaxy disk and was one of several sources of
+  # compact-structure bias; at 0.05 it fired on ~5% of samples.
+  stellar_prob: 0.0
+  clean_prob: 0.15
+
+  # --- CHANGED 0825: diffuse branch ---------------------------------------
+  # With stellar_prob at 0 the `elif` chain gives diffuse_prob cleanly, so this
+  # is the true fraction of samples that are gravity-free fields.
+  diffuse_prob: 0.35          # was 0.18
+  diffuse_blend_prob: 0.35    # of those, the fraction keeping some real crop
+  diffuse_bypass_prob: 0.25   # was 0.15. The informativeness gate cannot tell a
+                              # dead pedestal from a genuine low-contrast field,
+                              # so it strips real diffuse morphology; this is the
+                              # fraction admitted unjudged.
+  val_diffuse_fraction: 0.20  # was 0.0 -- see the header note on the val curve
+
+  diffuse:
+    turb_version: 2           # 1 = v11 log-normal, 2 = v13 cascade generator
+    gen_size: 384             # build grid; must stay above target_size*1.5=384
+    bend_prob: 0.45           # explicit wide low-contrast ridges on top
+
+    # GENERATOR SHAPE -- FIT TO REAL HERSCHEL 350um POLARIS CIRRUS, not chosen
+    # by eye. Eight 384^2 fully-covered crops from
+    # Herschel_test/aligned_Polaris_herschel_350um_GT_1x.npy give the target;
+    # these values reproduce it to a few percent:
+    #
+    #   quantity                REAL Polaris    v11 (0818)    v13 (this)
+    #   P(k) slope k=12-90         -3.06          -2.55         -3.11
+    #   sigma_lnN                   0.30           0.49          0.29
+    #   flux in brightest 1%        2.2%           3.3%          2.1%
+    #   P(k) axis ratio             1.17           1.03          1.17
+    #   cost per field (768^2)       --            54 ms         31 ms
+    #
+    # The two real errors in v11 were CONTRAST (Mach 1.5-8 is the molecular-cloud
+    # range, not diffuse cirrus -- it made sigma_lnN ~2x too high) and a SLOPE
+    # that was ~0.5 too shallow. Fixing those is most of the improvement.
+    beta: [2.9, 3.6]             # REQUESTED exponent, NOT the measured slope.
+                                 # The k-space ellipse and the k_inj knee flatten
+                                 # the realised angle-averaged slope: 2.9-3.6
+                                 # comes out at -3.11, the Polaris value.
+                                 # Re-measure if you change anisotropy/inject_k.
+    mach: [0.7, 2.2]             # transonic -> sigma_lnN ~0.29 (Polaris: 0.30).
+                                 # v11 used [1.5, 8.0], which is molecular-cloud
+                                 # turbulence and far too high-contrast here.
+    anisotropy: [1.0, 1.3]       # k-space axis ratio -> B-aligned eddies. Larger
+                                 # values flatten the angle-averaged P(k); the
+                                 # strong anisotropy comes from the striations.
+    inject_k: [0.8, 2.5]         # driving scale, cycles per box: turbulence
+                                 # driven on 1/2 to the full field, which is what
+                                 # sets the size of the voids and lanes.
+    cascade_octaves: 4
+    cascade_strength: 0.0        # OFF. Set [0.3, 0.8] for intermittency
+                                 # (zeta6/zeta3 2.01 -> 1.91, vs Polaris 1.89).
+                                 # It matches every scalar statistic and STILL
+                                 # looks wrong next to Polaris -- see below.
+    warp_frac: 0.0               # OFF. Set [0.0, 0.025] for phase coherence.
+                                 # Both switches produce a fine curled,
+                                 # fingerprint-like texture that real cirrus does
+                                 # not have. They are kept because they are
+                                 # physically motivated and cheap to re-enable,
+                                 # but if you turn either on, LOOK at the fields
+                                 # (plot_diffuse_samples.py) -- the scalar
+                                 # statistics cannot see the difference.
+
+    # Beams for diffuse samples only, in TARGET pixels (0.5' each).
+    # Non-diffuse samples keep the shared 0.4-3.5 x 3.0-6.0 draw.
+    act_fwhm: [0.3, 1.6]         # small target beam: keeps the cascade in the GT
+    planck_ratio: [3.0, 6.0]     # condition/target beam ratio. The input is
+                                 # resampled to planck_size regardless, so the
+                                 # real SR factor is fixed at 256/51 ~ 5x; this
+                                 # only sets beam- vs pixel-limited. Drop to
+                                 # [2.5, 4.0] to make diffuse samples easier
+                                 # than the rest, [4.0, 12.0] to make them
+                                 # harder and closer to the true Planck beam.
+    val_act_fwhm: 1.0            # fixed (not drawn) so val is reproducible
+    val_planck_fwhm: 5.0
+  # ------------------------------------------------------------------------
+
+  primary_indices: [0]   # 4.5um, 24um, 250um
+  cond_indices: [0]      # Observations used for bridge guidance
+  split_mode: "physical_ood"  ### "random"
+  ood_keywords: ["I100"]  # You can add more like ["I100", "B1"]
+  # test_size: 0.01
+  batch_size: 2
+  num_workers: 16
+  persistent_workers: true
+  prefetch_factor: 4          # Forces workers to prepare 4 batches in advance
+
+  patch_size: 256
+  num_patches_train: 8
+  num_patches_val: 4
+  mask_taper_sigma: 1.2
+  augment: true
+
+  # Generative Robustness (Curriculum)
+  artifacts:
+    enable: true
+    activation_epoch: 50
+    prob_bad_pixel: 0.001
+    prob_stripe: 0.005
+    mask_loss: False            # Use masking to handle rotation/artifacts
+
+  noise:
+    m2_noise_level: 0.01
+
+# Model & Bridge Architecture
+model:
+  type: "dsb"                  # <--- Logic switch for Factory
+  in_channels: 1
+  out_channels: 1
+  cond_channels: 1     # For the Planck condition
+
+  base_channels: 128
+  num_res_blocks: 2
+  attention_resolutions: [32,16, 8]
+  dropout: 0.1
+  channel_mult: [1,1, 2, 2, 4,4]
+
+  use_observable_enhancement: true
+
+  # Bridge Settings
+  intervals: 1000
+  beta_max: 0.02
+  learning_rate: 0.0001
+  ema_decay: 0.999
+
+# Training Control (Synced with DDPM version)
+training:
+  epochs: 6102
+  snapshot_iter_freq: 5000     # Mid-epoch visual/checkpoint check
+  archive_interval: 100        # Permanent checkpoint every 100 epochs
+  snapshot_epoch_freq: 1       # End-of-epoch full validation
+  snapshot_skip_steps: 50      # Fast sampling for validation snapshots
+  distributed: true
+
+# Inference/Sliding Window Logic
+inference:
+  sampling_skip_steps: 10      # High quality but faster than training
+  stride: 32

@@ -1,3 +1,10 @@
+# ---------------------------------------------------------------
+# Portions adapted from NVlabs/I2SB (https://github.com/NVlabs/I2SB):
+# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# This work is licensed under the NVIDIA Source Code License
+# for I2SB. To view a copy of this license, see the LICENSE file.
+# ---------------------------------------------------------------
+
 import os
 import random
 import numpy as np
