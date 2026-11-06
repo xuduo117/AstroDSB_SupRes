@@ -1,5 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=Eval_DSB
+# Example job script from the runs of the paper (Trillium, SciNet). Submit from the repository
+# root, e.g. `sbatch slurm/infer_chunks.slurm`, and edit the account, modules, environment and paths
+# for your cluster.
+#SBATCH --job-name=Pred_DSB
 #SBATCH -A rrg-pgmartin
 #SBATCH --output=logs/pred_%j.out
 #SBATCH --error=logs/pred_%j.err
@@ -26,4 +29,6 @@ module load opencv
 source /home/xuduo117/py312/bin/activate
 
 
-python evaluate.py --config configs/SuperRes_dsb_0910.yaml 
+# python inference_chunks.py --config configs/SuperRes_dsb.yaml  --data_dir ./cropped_inference_data/ --batch_size 64
+# python inference_chunks.py --config configs/SuperRes_dsb_0701.yaml  --data_dir ./cropped_inference_data_0701/ --batch_size 64
+python inference_chunks.py --config configs/SuperRes_dsb_0910.yaml  --data_dir ./cropped_inference_data_0910/ --batch_size 64

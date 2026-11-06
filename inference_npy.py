@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-inference_npy_files_comprehensive_v2.py
+inference_npy.py
 
 Arbitrary-shape .npy inference for the AstroDSB / DDPM patch models.
 

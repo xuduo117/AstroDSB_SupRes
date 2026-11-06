@@ -8,6 +8,8 @@ from matplotlib.colors import SymLogNorm
 from easydict import EasyDict as edict
 
 # --- UPDATED: Import ALL THREE Synthetic datasets ---
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repository root
 from data.datasets import SyntheticAstroDataset, SkirtAstroDataset, FireQuicklookDataset
 from data.factory import scan_and_split_files
 

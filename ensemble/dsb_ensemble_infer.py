@@ -34,7 +34,7 @@ TYPICAL USE
 
   # posterior + kernel test on one region, 30 draws per patch
   python dsb_ensemble_infer.py \
-      --code-dir /path/to/Astro_DSB/code \
+      --code-dir .   (the repository root) \
       --config   /path/to/Astro_DSB/code/configs/SuperRes_dsb_0910.yaml \
       --ckpt     /path/to/results/astro_supres_dsb_0910/latest.pt \
       --lowres   planck217_native.npy \

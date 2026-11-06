@@ -1,5 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=Pred_DSB
+# Example job script from the runs of the paper (Trillium, SciNet). Submit from the repository
+# root, e.g. `sbatch slurm/evaluate_i100.slurm`, and edit the account, modules, environment and paths
+# for your cluster.
+#SBATCH --job-name=Eval_DSB
 #SBATCH -A rrg-pgmartin
 #SBATCH --output=logs/pred_%j.out
 #SBATCH --error=logs/pred_%j.err
@@ -7,7 +10,7 @@
 #SBATCH --nodes=1                     # Multi-GPU on a single node
 #SBATCH --gpus-per-node=1             # Request all 4 H100s
 #SBATCH --cpus-per-task=24            # 8 cores per GPU (match num_workers in YAML)
-#SBATCH --time=0:59:59               # Max time per job
+#SBATCH --time=23:59:59               # Max time per job
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=astroduo.xu@utoronto.ca
 
@@ -26,4 +29,4 @@ module load opencv
 source /home/xuduo117/py312/bin/activate
 
 
-python inference_real_data.py --config configs/SuperRes_dsb_v2.yaml  --input_map Test_data/ml_input_planck.npy --output_map Test_data/ml_dsb_prediction_v2_0426.npy --stride 8
+python evaluate.py --config configs/SuperRes_dsb_0910.yaml 

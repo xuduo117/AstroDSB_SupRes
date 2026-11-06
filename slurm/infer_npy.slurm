@@ -1,5 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=Pred_DSB
+# Example job script from the runs of the paper (Trillium, SciNet). Submit from the repository
+# root, e.g. `sbatch slurm/infer_npy.slurm`, and edit the account, modules, environment and paths
+# for your cluster.
+#SBATCH --job-name=Pred_DSB_npy
 #SBATCH -A rrg-pgmartin
 #SBATCH --output=logs/pred_%j.out
 #SBATCH --error=logs/pred_%j.err
@@ -8,7 +11,7 @@
 #SBATCH --gpus-per-node=1             # Request all 4 H100s
 #SBATCH --cpus-per-task=24            # 8 cores per GPU (match num_workers in YAML)
 #SBATCH --time=23:59:59               # Max time per job
-#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=astroduo.xu@utoronto.ca
 
 # --- 1. CACHE & PERFORMANCE ENV ---
@@ -26,6 +29,7 @@ module load opencv
 source /home/xuduo117/py312/bin/activate
 
 
-# python inference_chunks.py --config configs/SuperRes_dsb.yaml  --data_dir ./cropped_inference_data/ --batch_size 64
+python inference_npy.py --config configs/SuperRes_dsb_0910.yaml  \
+--data_dir /path/to/input_npy_dir/ --stride 16 \
+--out_dir /path/to/output_dir/ 
 # python inference_chunks.py --config configs/SuperRes_dsb_0701.yaml  --data_dir ./cropped_inference_data_0701/ --batch_size 64
-python inference_chunks.py --config configs/SuperRes_dsb_0910.yaml  --data_dir ./cropped_inference_data_0910/ --batch_size 64

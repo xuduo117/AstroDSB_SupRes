@@ -45,7 +45,7 @@ import torch
 import yaml
 
 warnings.filterwarnings("ignore")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repository root
 from data import datasets as ds                                  # noqa: E402
 
 try:

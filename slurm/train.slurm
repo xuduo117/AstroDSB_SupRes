@@ -1,4 +1,7 @@
 #!/bin/bash
+# Example job script from the runs of the paper (Trillium, SciNet). Submit from the repository
+# root, e.g. `sbatch slurm/train.slurm`, and edit the account, modules, environment and paths
+# for your cluster.
 #SBATCH --job-name=SupRes_DSB
 #SBATCH -A rrg-pgmartin
 #SBATCH --output=logs/dsb_%j.out
